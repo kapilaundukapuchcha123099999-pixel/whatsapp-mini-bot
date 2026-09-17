@@ -5,7 +5,6 @@ import makeWASocket, {
 import pino from "pino";
 import http from "http";
 
-// Render Web Service එකට port එකක් අවශ්‍යයි
 const PORT = process.env.PORT || 10000;
 
 http.createServer((req, res) => {
@@ -28,19 +27,11 @@ async function startNova() {
 
   sock.ev.on("connection.update", async ({
     connection,
-    lastDisconnect,
-    qr
+    lastDisconnect
   }) => {
 
-    if (qr) {
-      console.log("📱 WhatsApp QR code received.");
-      console.log(qr);
-    }
-
     if (connection === "open") {
-      console.log("╭━━〔 🤖 NOVA MINI 〕━━➢");
-      console.log("┃ ✅ WhatsApp connected!");
-      console.log("╰━━━━━━━━━━━━━━━━━━━━➢");
+      console.log("🤖 NOVA MINI connected!");
     }
 
     if (connection === "close") {
@@ -67,36 +58,91 @@ async function startNova() {
       msg.message.extendedTextMessage?.text ||
       "";
 
-    const command = text.trim().toLowerCase();
+    const command = text.trim();
+    const lower = command.toLowerCase();
 
-    if (command === ".ping") {
+    if (lower === ".ping") {
       await sock.sendMessage(msg.key.remoteJid, {
         text: "🏓 Pong!\n\n🤖 NOVA MINI is online."
       });
     }
 
-    if (command === ".menu") {
+    if (lower === ".menu") {
       await sock.sendMessage(msg.key.remoteJid, {
         text: `╭━━〔 🤖 NOVA MINI 〕━━➢
 ┃
-┃ 🛠️ OTHER
+┃ 🛠️ BASIC
 ┃ ➠ .ping
 ┃ ➠ .help
 ┃ ➠ .menu
+┃
+┃ 📚 API
+┃ ➠ .define <word>
 ┃
 ╰━━━━━━━━━━━━━━━━━━━━➢`
       });
     }
 
-    if (command === ".help") {
+    if (lower === ".help") {
       await sock.sendMessage(msg.key.remoteJid, {
         text:
           "🤖 NOVA MINI\n\nType .menu to see available commands."
       });
     }
+
+    if (lower.startsWith(".define ")) {
+      const word = command.slice(8).trim();
+
+      if (!word) {
+        await sock.sendMessage(msg.key.remoteJid, {
+          text: "📚 Usage: .define <word>"
+        });
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`
+        );
+
+        if (!response.ok) {
+          await sock.sendMessage(msg.key.remoteJid, {
+            text: `❌ No definition found for: ${word}`
+          });
+          return;
+        }
+
+        const data = await response.json();
+        const entry = data[0];
+
+        const meaning = entry.meanings?.[0];
+        const definition =
+          meaning?.definitions?.[0]?.definition ||
+          "No definition available.";
+
+        await sock.sendMessage(msg.key.remoteJid, {
+          text:
+`📚 WORD: ${word}
+
+🔤 Type: ${meaning?.partOfSpeech || "Unknown"}
+
+📖 Meaning:
+${definition}
+
+🤖 NOVA MINI`
+        });
+
+      } catch (error) {
+        console.error(error);
+
+        await sock.sendMessage(msg.key.remoteJid, {
+          text: "❌ API error. Please try again later."
+        });
+      }
+    }
   });
 }
 
-startNova().catch((err) => {
-  console.error("❌ NOVA MINI error:", err);
+startNova().catch((error) => {
+  console.error("❌ NOVA MINI error:", error);
 });
