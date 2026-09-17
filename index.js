@@ -3,19 +3,40 @@ import makeWASocket, {
   DisconnectReason
 } from "@whiskeysockets/baileys";
 import pino from "pino";
+import http from "http";
+
+// Render Web Service එකට port එකක් අවශ්‍යයි
+const PORT = process.env.PORT || 10000;
+
+http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("🤖 NOVA MINI is online!");
+}).listen(PORT, "0.0.0.0", () => {
+  console.log(`🌐 Web server running on port ${PORT}`);
+});
 
 async function startNova() {
-  const { state, saveCreds } = await useMultiFileAuthState("./auth_info");
+  const { state, saveCreds } =
+    await useMultiFileAuthState("./auth_info");
 
   const sock = makeWASocket({
     auth: state,
-    logger: pino({ level: "silent" }),
-    printQRInTerminal: true
+    logger: pino({ level: "silent" })
   });
 
   sock.ev.on("creds.update", saveCreds);
 
-  sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
+  sock.ev.on("connection.update", async ({
+    connection,
+    lastDisconnect,
+    qr
+  }) => {
+
+    if (qr) {
+      console.log("📱 WhatsApp QR code received.");
+      console.log(qr);
+    }
+
     if (connection === "open") {
       console.log("╭━━〔 🤖 NOVA MINI 〕━━➢");
       console.log("┃ ✅ WhatsApp connected!");
@@ -24,13 +45,14 @@ async function startNova() {
 
     if (connection === "close") {
       const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+        lastDisconnect?.error?.output?.statusCode !==
+        DisconnectReason.loggedOut;
 
       console.log("❌ Connection closed.");
 
       if (shouldReconnect) {
         console.log("🔄 Reconnecting...");
-        startNova();
+        setTimeout(startNova, 5000);
       }
     }
   });
@@ -38,7 +60,7 @@ async function startNova() {
   sock.ev.on("messages.upsert", async ({ messages }) => {
     const msg = messages[0];
 
-    if (!msg.message || msg.key.fromMe) return;
+    if (!msg?.message || msg.key.fromMe) return;
 
     const text =
       msg.message.conversation ||
@@ -55,18 +77,12 @@ async function startNova() {
 
     if (command === ".menu") {
       await sock.sendMessage(msg.key.remoteJid, {
-        text:
-`╭━━〔 🤖 NOVA MINI 〕━━➢
-┃
-┃ 📥 DOWNLOAD
-┃ ➠ .youtube
-┃ ➠ .tiktok
-┃ ➠ .song
-┃ ➠ .video
+        text: `╭━━〔 🤖 NOVA MINI 〕━━➢
 ┃
 ┃ 🛠️ OTHER
 ┃ ➠ .ping
 ┃ ➠ .help
+┃ ➠ .menu
 ┃
 ╰━━━━━━━━━━━━━━━━━━━━➢`
       });
@@ -74,10 +90,13 @@ async function startNova() {
 
     if (command === ".help") {
       await sock.sendMessage(msg.key.remoteJid, {
-        text: "🤖 NOVA MINI\n\nType .menu to see available commands."
+        text:
+          "🤖 NOVA MINI\n\nType .menu to see available commands."
       });
     }
   });
 }
 
-startNova();
+startNova().catch((err) => {
+  console.error("❌ NOVA MINI error:", err);
+});
